@@ -13,7 +13,7 @@
  *)
 (** Module that defines API functions for Pool objects
  * @group XenAPI functions
- *)
+*)
 
 (** {2 (Fill in Title!)} *)
 
@@ -72,9 +72,10 @@ exception Cannot_eject_master
 val no_exn : (unit -> unit) -> unit
 val unplug_pbds : __context:Context.t -> [ `host ] Ref.t -> unit
 val eject : __context:Context.t -> host:API.ref_host -> unit
-val sync_m : Threadext.Mutex.t
+val sync_m : Mutex.t
 val sync_database : __context:Context.t -> unit
-val designate_new_master : __context:Context.t -> host:'a -> unit
+val designate_new_master : __context:Context.t -> host:API.ref_host -> unit
+val management_reconfigure : __context:Context.t -> network:API.ref_network -> unit
 val initial_auth : __context:'a -> string
 val is_slave : __context:Context.t -> host:'b -> bool
 val hello :
@@ -91,14 +92,15 @@ val create_VLAN_from_PIF :
 val slave_network_report :
   __context:'a ->
   phydevs:'b -> dev_to_mac:'c -> dev_to_mtu:'d -> slave_host:'e -> 'f list
-  
+
 (** {2 High availability (HA)} *)
-  
-val enable_disable_m : Threadext.Mutex.t
+
+val enable_disable_m : Mutex.t
 val enable_ha :
   __context:Context.t ->
   heartbeat_srs:API.ref_SR list ->
-  configuration:(string * string) list -> unit
+  configuration:(string * string) list ->
+  unit
 val disable_ha : __context:Context.t -> unit
 val ha_prevent_restarts_for : __context:Context.t -> seconds:int64 -> unit
 val ha_failover_plan_exists : __context:Context.t -> n:int64 -> bool
@@ -118,11 +120,6 @@ val ha_schedule_plan_recomputation : __context:'a -> unit
 
 (** {2 (Fill in Title!)} *)
 
-val call_fn_on_hosts :
-  __context:Context.t ->
-  (rpc:(Rpc.call -> Rpc.response) ->
-   session_id:API.ref_session -> host:[ `host ] Ref.t -> 'a) ->
-  unit
 val call_fn_on_host :
   __context:Context.t ->
   (rpc:(Rpc.call -> Rpc.response) ->
@@ -159,11 +156,6 @@ val crl_install : __context:Context.t -> name:string -> cert:string -> unit
 val crl_uninstall : __context:Context.t -> name:string -> unit
 val crl_list : __context:'a -> string list
 val certificate_sync : __context:Context.t -> unit
-val get_master_slaves_list_with_fn :
-  __context:Context.t ->
-  ([ `host ] Ref.t -> [ `host ] Ref.t list -> 'a) -> 'a
-val get_master_slaves_list : __context:Context.t -> [ `host ] Ref.t list
-val get_slaves_list : __context:Context.t -> [ `host ] Ref.t list
 val enable_external_auth :
   __context:Context.t ->
   pool:'a ->
@@ -192,3 +184,21 @@ val audit_log_append : __context:Context.t -> line:string -> unit
 val test_archive_target : __context:Context.t -> self:API.ref_pool -> config:API.string_to_string_map -> string
 val enable_local_storage_caching : __context:Context.t -> self:API.ref_pool -> unit
 val disable_local_storage_caching : __context:Context.t -> self:API.ref_pool -> unit
+
+val get_license_state : __context:Context.t -> self:API.ref_pool -> (string * string) list
+val apply_edition : __context:Context.t -> self:API.ref_pool -> edition:string -> unit
+
+val assert_mac_seeds_available : __context:Context.t -> self:API.ref_pool -> seeds:string list -> unit
+
+val disable_ssl_legacy : __context:Context.t -> self:API.ref_pool -> unit
+val enable_ssl_legacy : __context:Context.t -> self:API.ref_pool -> unit
+
+(** Set on/off for IGMP Snooping *)
+val set_igmp_snooping_enabled : __context:Context.t -> self:API.ref_pool -> value:bool -> unit
+
+val has_extension : __context:Context.t -> self:API.ref_pool -> name:string -> bool
+
+val add_to_guest_agent_config :
+  __context:Context.t -> self:API.ref_pool -> key:string -> value:string -> unit
+val remove_from_guest_agent_config :
+  __context:Context.t -> self:API.ref_pool -> key:string -> unit

@@ -27,7 +27,7 @@ val consider_touching_session: (Rpc.call -> Rpc.response) -> API.ref_session -> 
 val slave_login: __context:Context.t -> host:[ `host ] Ref.t -> psecret:string -> [ `session ] Ref.t
 val slave_local_login: __context:Context.t -> psecret:string -> API.ref_session
 val slave_local_login_with_password: __context:Context.t -> uname:string -> pwd:string -> API.ref_session
-val login_with_password: __context:Context.t ->  uname:string -> pwd:string -> version:'a -> [ `session ] Ref.t
+val login_with_password: __context:Context.t ->  uname:string ->pwd:string -> version:'a -> originator:string -> [ `session ] Ref.t
 val change_password: __context:Context.t -> old_pwd:string -> new_pwd:string -> unit
 val logout: __context:Context.t -> unit
 val local_logout: __context:Context.t -> unit
@@ -35,4 +35,6 @@ val get_group_subject_identifier_from_session: __context:Context.t -> session:[ 
 val get_all_subject_identifiers: __context:Context.t -> string list
 val logout_subject_identifier: __context:Context.t -> subject_identifier:string -> unit
 val get_top: __context:Context.t -> self:API.ref_session -> API.ref_session
-val create_readonly_session: __context:Context.t -> uname:string -> API.ref_session
+val create_readonly_session:
+  __context:Context.t -> uname:string -> db_ref:Db_ref.t option -> API.ref_session
+val create_from_db_file: __context:Context.t -> filename:string -> API.ref_session

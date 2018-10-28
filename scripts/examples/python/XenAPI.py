@@ -55,8 +55,8 @@
 # --------------------------------------------------------------------
 
 import gettext
-import xmlrpclib
-import httplib
+import six.moves.xmlrpc_client as xmlrpclib
+import six.moves.http_client as httplib
 import socket
 import sys
 
@@ -72,10 +72,10 @@ class Failure(Exception):
     def __str__(self):
         try:
             return str(self.details)
-        except Exception, exn:
-            import sys
-            print >>sys.stderr, exn
-            return "Xen-API failure: %s" % str(self.details)
+        except Exception as exn:
+            msg = "Xen-API failure: %s" % exn
+            sys.stderr.write(msg)
+            return msg
 
     def _details_map(self):
         return dict([(str(i), self.details[i])
@@ -92,13 +92,14 @@ class UDSHTTPConnection(httplib.HTTPConnection):
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.connect(path)
 
-class UDSHTTP(httplib.HTTP):
+class UDSHTTP(httplib.HTTPConnection):
     _connection_class = UDSHTTPConnection
 
 class UDSTransport(xmlrpclib.Transport):
     def __init__(self, use_datetime=0):
         self._use_datetime = use_datetime
         self._extra_headers=[]
+        self._connection = (None, None)
     def add_extra_header(self, key, value):
         self._extra_headers += [ (key,value) ]
     def make_connection(self, host):
@@ -119,15 +120,25 @@ class Session(xmlrpclib.ServerProxy):
     Example:
 
     session = Session('http://localhost/')
-    session.login_with_password('me', 'mypassword')
+    session.login_with_password('me', 'mypassword', '1.0', 'xen-api-scripts-xenapi.py')
     session.xenapi.VM.start(vm_uuid)
     session.xenapi.session.logout()
     """
 
     def __init__(self, uri, transport=None, encoding=None, verbose=0,
-                 allow_none=1):
-        xmlrpclib.ServerProxy.__init__(self, uri, transport, encoding,
-                                       verbose, allow_none)
+                 allow_none=1, ignore_ssl=False):
+
+        # Fix for CA-172901 (+ Python 2.4 compatibility)
+        # Fix for context=ctx ( < Python 2.7.9 compatibility)
+        if not (sys.version_info[0] <= 2 and sys.version_info[1] <= 7 and sys.version_info[2] <= 9 ) \
+                and ignore_ssl:
+            import ssl
+            ctx = ssl._create_unverified_context()
+            xmlrpclib.ServerProxy.__init__(self, uri, transport, encoding,
+                                           verbose, allow_none, context=ctx)
+        else:
+            xmlrpclib.ServerProxy.__init__(self, uri, transport, encoding,
+                                           verbose, allow_none)
         self.transport = transport
         self._session = None
         self.last_login_method = None
@@ -159,16 +170,22 @@ class Session(xmlrpclib.ServerProxy):
             raise xmlrpclib.Fault(
                 500, 'Tried 3 times to get a valid session, but failed')
 
-
     def _login(self, method, params):
-        result = _parse_result(getattr(self, 'session.%s' % method)(*params))
-        if result is _RECONNECT_AND_RETRY:
-            raise xmlrpclib.Fault(
-                500, 'Received SESSION_INVALID when logging in')
-        self._session = result
-        self.last_login_method = method
-        self.last_login_params = params
-        self.API_version = self._get_api_version()
+        try:
+            result = _parse_result(
+                getattr(self, 'session.%s' % method)(*params))
+            if result is _RECONNECT_AND_RETRY:
+                raise xmlrpclib.Fault(
+                    500, 'Received SESSION_INVALID when logging in')
+            self._session = result
+            self.last_login_method = method
+            self.last_login_params = params
+            self.API_version = self._get_api_version()
+        except socket.error as e:
+            if e.errno == socket.errno.ETIMEDOUT:
+                raise xmlrpclib.Fault(504, 'The connection timed out')
+            else:
+                raise e
 
     def _logout(self):
         try:
@@ -196,6 +213,8 @@ class Session(xmlrpclib.ServerProxy):
             return _Dispatcher(self.API_version, self.xenapi_request, None)
         elif name.startswith('login') or name.startswith('slave_local'):
             return lambda *params: self._login(name, params)
+        elif name == 'logout':
+            return _Dispatcher(self.API_version, self.xenapi_request, "logout")
         else:
             return xmlrpclib.ServerProxy.__getattr__(self, name)
 

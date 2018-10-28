@@ -13,12 +13,12 @@
  *)
 (** Common code between the fake and real servers for dealing with VIFs.
  * @group Networking
- *)
+*)
 
 (** Throw error if the given operation is not in the list of allowed operations. *)
 val assert_operation_valid :
   __context:Context.t -> self:[ `VIF ] Ref.t -> op:API.vif_operations -> unit
-  
+
 (** Update the [PIF.allowed_operations] field. *)
 val update_allowed_operations :
   __context:Context.t -> self:[ `VIF ] Ref.t -> unit
@@ -50,9 +50,15 @@ val create :
   currently_attached:bool ->
   locking_mode:API.vif_locking_mode ->
   ipv4_allowed:string list ->
-  ipv6_allowed:string list -> API.ref_VIF
+  ipv6_allowed:string list ->
+  ipv4_configuration_mode:[< `None | `Static ] ->
+  ipv4_addresses:string list ->
+  ipv4_gateway:string ->
+  ipv6_configuration_mode:[< `None | `Static ] ->
+  ipv6_addresses:string list ->
+  ipv6_gateway:string -> API.ref_VIF
 
-(** Destroy a VIF object in the database. *)  
+(** Destroy a VIF object in the database. *)
 val destroy : __context:Context.t -> self:[ `VIF ] Ref.t -> unit
 
 (** Copy a VIF. *)
@@ -61,6 +67,6 @@ val copy :
   vm:[ `VM ] Ref.t ->
   preserve_mac_address:bool -> [ `VIF ] Ref.t -> API.ref_VIF
 
-(** Generate a MAC address *)  
+(** Generate a MAC address *)
 val gen_mac : int * string -> string
 

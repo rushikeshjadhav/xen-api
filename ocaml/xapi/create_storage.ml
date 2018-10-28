@@ -13,13 +13,13 @@
  *)
 (** Use the API to register a set of default SRs with the server.
  * @group Storage
- *)
- 
+*)
+
 open Client
-module D=Debug.Debugger(struct let name="xapi" end)
+module D=Debug.Make(struct let name="xapi" end)
 open D
 
-let plug_all_pbds __context rpc session_id =
+let plug_all_pbds __context =
   (* Explicitly resynchronise local PBD state *)
   let my_pbds = Helpers.get_my_pbds __context in
   Storage_access.resynchronise_pbds ~__context ~pbds:(List.map fst my_pbds);
@@ -28,53 +28,50 @@ let plug_all_pbds __context rpc session_id =
   let result = ref true in
   List.iter
     (fun (self, pbd_record) ->
-      try 
-	if pbd_record.API.pBD_currently_attached
-	then debug "Not replugging PBD %s: already plugged in" (Ref.string_of self)
-	else Client.PBD.plug ~rpc ~session_id ~self
-      with e -> 
-	result := false;
-	error "Could not plug in pbd '%s': %s" (Db.PBD.get_uuid ~__context ~self) (Printexc.to_string e))
+       try
+         if pbd_record.API.pBD_currently_attached
+         then debug "Not replugging PBD %s: already plugged in" (Ref.string_of self)
+         else Xapi_pbd.plug ~__context ~self
+       with
+       | Db_exn.DBCache_NotFound(_, "PBD", _) as e ->
+           debug "Ignoring PBD/SR that got deleted before we plugged it: %s" (Printexc.to_string e)
+       | e ->
+         result := false;
+         error "Could not plug in pbd '%s': %s" pbd_record.API.pBD_uuid (Printexc.to_string e))
     my_pbds;
-  !result 
+  !result
 
-let plug_unplugged_pbds __context rpc session_id =
+
+let plug_unplugged_pbds __context =
+  (* If the plug is to succeed for SM's requiring a cluster stack
+   * we have to enable the cluster stack too if we have one *)
   let my_pbds = Helpers.get_my_pbds __context in
   List.iter
     (fun (self, pbd_record) ->
-      try 
-	if pbd_record.API.pBD_currently_attached 
-	then debug "Not replugging PBD %s: already plugged in" (Ref.string_of self)
-	else Client.PBD.plug ~rpc ~session_id ~self
-      with e -> debug "Could not plug in pbd '%s': %s" (Client.PBD.get_uuid rpc session_id self) (Printexc.to_string e))
+       try
+         if pbd_record.API.pBD_currently_attached
+         then debug "Not replugging PBD %s: already plugged in" (Ref.string_of self)
+         else Xapi_pbd.plug ~__context ~self
+       with e -> debug "Could not plug in pbd '%s': %s" (Db.PBD.get_uuid ~__context ~self) (Printexc.to_string e))
     my_pbds
 
 (* Create a PBD which connects this host to the SR, if one doesn't already exist *)
-let maybe_create_pbd rpc session_id sr device_config me = 
-	let pbds = Client.SR.get_PBDs rpc session_id sr in
-	let pbds = List.filter (fun self -> Client.PBD.get_host rpc session_id self = me) pbds in
-	(* Check not more than 1 pbd in the database *)
-	let pbds =
-		if List.length pbds > 1 
-			then begin
-				(* shouldn't happen... delete all but first pbd to make db consistent again *)
-				List.iter (fun pbd->Client.PBD.destroy rpc session_id pbd) (List.tl pbds);
-				[List.hd pbds]
-				end
-			else pbds
-	in
-	if List.length pbds = 0 (* If there's no PBD, create it *)
-		then
-			let dev_cfg = Server_helpers.exec_with_new_task
-				~session_id
-				"duplicate secrets"
-				(fun ctxt -> Xapi_secret.duplicate_passwds ctxt device_config)
-			in
-			Client.PBD.create ~rpc ~session_id ~host:me ~sR:sr 
-				~device_config:dev_cfg ~other_config:[]
-		else
-			List.hd pbds (* Otherwise, return the current one *)
-
+let maybe_create_pbd rpc session_id sr device_config me =
+  let pbds = Client.SR.get_PBDs rpc session_id sr in
+  let pbds = List.filter (fun self -> Client.PBD.get_host rpc session_id self = me) pbds in
+  (* Check not more than 1 pbd in the database *)
+  let pbds =
+    if List.length pbds > 1
+    then begin
+      (* shouldn't happen... delete all but first pbd to make db consistent again *)
+      List.iter (fun pbd->Client.PBD.destroy rpc session_id pbd) (List.tl pbds);
+      [List.hd pbds]
+    end
+    else pbds
+  in
+  if List.length pbds = 0 (* If there's no PBD, create it *)
+  then Client.PBD.create ~rpc ~session_id ~host:me ~sR:sr ~device_config ~other_config:[]
+  else List.hd pbds (* Otherwise, return the current one *)
 
 let create_storage (me: API.ref_host) rpc session_id __context : unit =
   let create_pbds_for_shared_srs () =
@@ -88,14 +85,16 @@ let create_storage (me: API.ref_host) rpc session_id __context : unit =
     let maybe_create_pbd_for_shared_sr s =
       let mpbd,mpbd_rec = List.find (fun (_,pbdr)->pbdr.API.pBD_SR = s) master_pbds in
       let master_devconf = mpbd_rec.API.pBD_device_config in
-       maybe_create_pbd rpc session_id s master_devconf me (* copy device config from master *) in
-      List.iter (fun s -> try ignore (maybe_create_pbd_for_shared_sr s) with _ -> ()) shared_sr_refs
+      let my_devconf = List.remove_assoc "SRmaster" master_devconf in (* this should never be used *)
+      maybe_create_pbd rpc session_id s my_devconf me
+    in
+    List.iter (fun s -> try ignore (maybe_create_pbd_for_shared_sr s) with _ -> ()) shared_sr_refs
   in
 
-  let other_config = 
+  let other_config =
     try
-      let pool = List.hd (Db.Pool.get_all ~__context) in
-      Db.Pool.get_other_config ~__context ~self:pool 
+      let pool = Helpers.get_pool ~__context in
+      Db.Pool.get_other_config ~__context ~self:pool
     with _ -> []
   in
 
@@ -107,16 +106,16 @@ let create_storage (me: API.ref_host) rpc session_id __context : unit =
   else
     debug "Skipping creation of PBDs for shared SRs";
 
-  let all_pbds_ok = plug_all_pbds __context rpc session_id in
+  let all_pbds_ok = plug_all_pbds __context in
   if not(all_pbds_ok) then begin
     let obj_uuid = Helpers.get_localhost_uuid () in
     Xapi_alert.add ~msg:Api_messages.pbd_plug_failed_on_server_start ~cls:`Host ~obj_uuid ~body:"";
   end;
   Xapi_host_helpers.consider_enabling_host ~__context
-      
+
 
 let create_storage_localhost rpc session_id : unit =
   Server_helpers.exec_with_new_task "creating storage"
     (fun context->
        let me = Helpers.get_localhost ~__context:context in
-	 create_storage me rpc session_id context)
+       create_storage me rpc session_id context)

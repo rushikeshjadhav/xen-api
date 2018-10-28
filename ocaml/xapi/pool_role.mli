@@ -12,8 +12,8 @@
  * GNU Lesser General Public License for more details.
  *)
 
-type t = 
-  | Master  
+type t =
+  | Master
   | Slave of string (** IP address *)
   | Broken
 
@@ -31,6 +31,10 @@ val is_master: unit -> bool
 val is_slave: unit -> bool
 (** Returns true if this node is broken *)
 val is_broken: unit -> bool
+(** Returns true if this is a unit test *)
+val is_unit_test: unit -> bool
+
+val set_pool_role_for_test: unit -> unit
 
 exception This_host_is_a_master
 exception This_host_is_broken

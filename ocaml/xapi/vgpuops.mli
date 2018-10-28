@@ -11,20 +11,22 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Lesser General Public License for more details.
  *)
- 
+
 (** Module that handles assigning vGPUs to VMs.
  * @group Virtual-Machine Management
- *)
+*)
 
 
 (** Assign a list of PCI devices to a VM for GPU passthrough, store them in
-	other_config:vgpu_pci *)
+    	other_config:vgpu_pci *)
 val create_vgpus :
-  __context:Context.t -> (API.ref_VM * API.vM_t) -> bool -> unit
+  __context:Context.t ->
+  (API.ref_host) ->(API.ref_VM * API.vM_t) -> bool -> unit
+
+(** Check whether a VM has the platform flag that indicates its VGPU is being
+ *  set up manually. *)
+val vgpu_manual_setup_of_vm : API.vM_t -> bool
 
 (** Return a list of the GPU PCI devices which have been assigned to this VM *)
-val list_vgpus :
+val list_pcis_for_passthrough :
   __context:Context.t -> vm:API.ref_VM -> (int * (int * int * int * int)) list
-
-(** Mark all VGPUs for the given VM as unattached. *)
-val clear_vgpus : __context:Context.t -> vm:[ `VM ] Ref.t -> unit

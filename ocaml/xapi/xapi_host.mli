@@ -13,7 +13,7 @@
  *)
 (** Module that defines API functions for Host objects
  * @group XenAPI functions
- *)
+*)
 
 (** {2 (Fill in Title!)} *)
 
@@ -23,16 +23,18 @@ val set_emergency_mode_error : string -> string list -> unit
     by the CLI, indicating stuff like: failure to get a management IP address, the master doesn't
     recognise us etc. *)
 
-val local_assert_healthy : __context:'a -> unit 
+val local_assert_healthy : __context:'a -> unit
 
 val set_power_on_mode :
   __context:Context.t ->
   self:[ `host ] Ref.t -> power_on_mode: string -> power_on_config:(string * string) list -> unit
-  
+
 val bugreport_upload :
   __context:'a ->
   host:'b -> url:string -> options:(string * string) list -> unit
-  
+
+val pool_size_is_restricted : __context:Context.t -> bool
+
 val signal_networking_change : __context:Context.t -> unit
 val signal_cdrom_event : __context:Context.t -> string -> unit
 val notify : __context:Context.t -> ty:string -> params:string -> unit
@@ -52,6 +54,7 @@ val restart_agent : __context:'a -> host:'b -> unit
 val shutdown_agent : __context:'a -> unit
 val disable : __context:Context.t -> host:[ `host ] Ref.t -> unit
 val enable : __context:Context.t -> host:[ `host ] Ref.t -> unit
+val prepare_for_poweroff : __context:Context.t -> host:[ `host ] Ref.t -> unit
 val shutdown : __context:Context.t -> host:[ `host ] Ref.t -> unit
 val reboot : __context:Context.t -> host:[ `host ] Ref.t -> unit
 val power_on : __context:Context.t -> host:[ `host ] Ref.t -> unit
@@ -62,7 +65,7 @@ val send_debug_keys : __context:Context.t -> host:'b -> keys:string -> unit
 val list_methods : __context:'a -> 'b
 val is_slave : __context:'a -> host:'b -> bool
 
-(** Contact the host and return whether it is a slave or not. 
+(** Contact the host and return whether it is a slave or not.
     If the host is dead then one of the xmlrpcclient exceptions will be thrown *)
 val ask_host_if_it_is_a_slave :
   __context:Context.t -> host:API.ref_host -> bool
@@ -87,8 +90,10 @@ val create :
   license_server:(string * string) list ->
   local_cache_sr:[ `SR ] Ref.t ->
   chipset_info:(string * string) list ->
+  ssl_legacy:bool ->
   [ `host ] Ref.t
 val destroy : __context:Context.t -> self:API.ref_host -> unit
+val declare_dead : __context:Context.t -> host:API.ref_host -> unit
 val ha_disable_failover_decisions : __context:'a -> host:'b -> unit
 val ha_disarm_fencing : __context:'a -> host:'b -> unit
 val ha_stop_daemon : __context:'a -> host:'b -> unit
@@ -105,11 +110,10 @@ val propose_new_master : __context:'a -> address:string -> manual:'b -> unit
 val commit_new_master : __context:Context.t -> address:string -> unit
 val abort_new_master : __context:'a -> address:string -> unit
 val update_master : __context:'a -> host:'b -> master_address:'c -> 'd
-val emergency_ha_disable : __context:'a -> unit
+val emergency_ha_disable : __context:'a -> soft:bool -> unit
 val request_backup :
   __context:Context.t -> host:API.ref_host -> generation:int64 -> force:bool -> unit
 val request_config_file_sync : __context:'a -> host:'b -> hash:string -> unit
-val syslog_config_write : string -> bool -> bool -> unit
 val syslog_reconfigure : __context:Context.t -> host:'a -> unit
 
 (** {2 Management Interface} *)
@@ -131,6 +135,11 @@ val get_diagnostic_timing_stats :
 val set_hostname_live :
   __context:Context.t -> host:[ `host ] Ref.t -> hostname:string -> unit
 val is_in_emergency_mode : __context:'a -> bool
+
+val set_stunnel_legacy :
+  __context:Context.t -> bool -> unit
+val set_ssl_legacy :
+  __context:Context.t -> self:[ `host ] API.Ref.t -> value:bool -> unit
 val compute_free_memory :
   __context:Context.t -> host:[ `host ] Ref.t -> int64
 val compute_memory_overhead :
@@ -148,7 +157,7 @@ val tickle_heartbeat :
 val create_new_blob :
   __context:Context.t ->
   host:[ `host ] Ref.t -> name:string -> mime_type:string -> public:bool -> [ `blob ] Ref.t
-val serialize_host_enable_disable_extauth : Threadext.Mutex.t
+val serialize_host_enable_disable_extauth : Mutex.t
 val extauth_hook_script_name : string
 val call_extauth_plugin_nomutex :
   __context:Context.t ->
@@ -160,10 +169,16 @@ val call_plugin :
   __context:Context.t ->
   host:[ `host ] Ref.t ->
   plugin:string -> fn:string -> args:(string * string) list -> string
+val call_extension :
+  __context:Context.t ->
+  host:[ `host ] Ref.t -> call:string -> Rpc.t
+val has_extension :
+  __context:Context.t ->
+  host:[ `host ] Ref.t -> name:string -> bool
 val sync_data : __context:Context.t -> host:API.ref_host -> unit
-val backup_rrds : __context:'a -> host:'b -> delay:float -> unit
-val get_servertime : __context:'a -> host:'b -> Date.iso8601
-val get_server_localtime : __context:'a -> host:'b -> Date.iso8601
+val backup_rrds : __context:Context.t -> host:'b -> delay:float -> unit
+val get_servertime : __context:'a -> host:'b -> Stdext.Date.iso8601
+val get_server_localtime : __context:'a -> host:'b -> Stdext.Date.iso8601
 val enable_binary_storage :
   __context:Context.t -> host:[ `host ] Ref.t -> unit
 val disable_binary_storage :
@@ -213,11 +228,11 @@ val detach_static_vdis :
 (** {2 Local Database} *)
 
 (** Set a key in the Local DB of the host. *)
-val set_localdb_key : __context:Context.t -> host:API.ref_host -> key:string -> value:string -> unit 
+val set_localdb_key : __context:Context.t -> host:API.ref_host -> key:string -> value:string -> unit
 
 
 (** {2 Secrets} *)
-  
+
 val update_pool_secret :
   __context:'a -> host:'b -> pool_secret:string -> unit
 
@@ -232,15 +247,17 @@ val refresh_pack_info : __context:Context.t -> host:API.ref_host -> unit
 
 (** Called by post-floodgate slaves to update the database AND recompute the pool_sku on the master *)
 val set_license_params :
-	__context:Context.t ->
-	self:[ `host ] Ref.t -> value:(string * string) list -> unit
+  __context:Context.t ->
+  self:[ `host ] Ref.t -> value:(string * string) list -> unit
 
 val copy_license_to_db :
-	__context:Context.t ->
-	host:[ `host ] Ref.t ->
-	features:Features.feature list -> additional:(string * string) list -> unit
+  __context:Context.t ->
+  host:[ `host ] Ref.t ->
+  features:Features.feature list -> additional:(string * string) list -> unit
 
-val license_apply : __context:Context.t -> host:API.ref_host -> contents:string -> unit
+val license_add : __context:Context.t -> host:API.ref_host -> contents:string -> unit
+
+val license_remove : __context:Context.t -> host:API.ref_host -> unit
 
 (** Attempt to activate the given edition.
  *  In needed, the function automatically checks v6 licenses in and out
@@ -248,16 +265,11 @@ val license_apply : __context:Context.t -> host:API.ref_host -> contents:string 
  *  available, the call will fail with an exception, leaving the edition as it is.
  *  Also call this function to change to a different license server, after the
  *  connection details in host.license_server have been amended. *)
-val apply_edition : __context:Context.t -> host:API.ref_host -> edition:string -> unit 
-
+val apply_edition : __context:Context.t -> host:API.ref_host -> edition:string -> force:bool -> unit
+val apply_edition_internal : __context:Context.t -> host:API.ref_host ->
+  edition:string -> additional:(string * string) list -> unit
 
 (** {2 CPU Feature Masking} *)
- 
-(** Set the CPU features to be used after a reboot, if the given features string is valid. *)
-val set_cpu_features : __context:Context.t -> host:API.ref_host -> features:string -> unit
-
-(** Remove the feature mask, such that after a reboot all features of the CPU are enabled. *)
-val reset_cpu_features : __context:Context.t -> host:API.ref_host -> unit
 
 (** Control the local caching behaviour of the host *)
 val enable_local_storage_caching : __context:Context.t -> host:API.ref_host -> sr:API.ref_SR -> unit
@@ -286,3 +298,18 @@ val sync_tunnels : __context:Context.t -> host:API.ref_host -> unit
 val sync_pif_currently_attached : __context:Context.t -> host:API.ref_host -> bridges:string list -> unit
 
 val migrate_receive : __context:Context.t -> host:API.ref_host -> network:API.ref_network -> options:API.string_to_string_map -> API.string_to_string_map
+
+val enable_display : __context:Context.t -> host:API.ref_host -> API.host_display
+
+val disable_display : __context:Context.t -> host:API.ref_host -> API.host_display
+
+val sync_display : __context:Context.t -> host:API.ref_host -> unit
+
+val apply_guest_agent_config : __context:Context.t -> host:API.ref_host -> unit
+
+(* See Xapi_pgpu.mxgpu_vf_setup *)
+val mxgpu_vf_setup : __context:Context.t -> host:API.ref_host -> unit
+
+val allocate_resources_for_vm : __context:Context.t -> self:API.ref_host -> vm:API.ref_VM -> live:bool -> unit
+val set_iscsi_iqn : __context:Context.t -> host:API.ref_host -> value:string -> unit
+val set_multipathing : __context:Context.t -> host:API.ref_host -> value:bool -> unit

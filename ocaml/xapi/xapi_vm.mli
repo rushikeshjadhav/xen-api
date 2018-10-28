@@ -13,7 +13,7 @@
  *)
 (** Module that defines API functions for VM objects
  * @group XenAPI functions
- *)
+*)
 
 (** {2 (Fill in Title!)} *)
 
@@ -29,24 +29,20 @@ val retrieve_wlb_recommendations :
   vm:[ `VM ] Ref.t -> (API.ref_host * string list) list
 val assert_agile : __context:Context.t -> self:[ `VM ] Ref.t -> unit
 val immediate_complete : __context:Context.t -> unit
-val set_actions_after_shutdown :
-  __context:Context.t ->
-  self:[ `VM ] Ref.t -> value:[< `destroy | `restart ] -> unit
-val set_actions_after_reboot :
-  __context:Context.t ->
-  self:[ `VM ] Ref.t -> value:[< `destroy | `restart ] -> unit
 val set_actions_after_crash :
   __context:Context.t ->
   self:[ `VM ] Ref.t ->
   value:[< `coredump_and_destroy
-         | `coredump_and_restart
-         | `destroy
-         | `preserve
-         | `rename_restart
-         | `restart ] ->
+        | `coredump_and_restart
+        | `destroy
+        | `preserve
+        | `rename_restart
+        | `restart ] ->
   unit
 val set_is_a_template :
   __context:Context.t -> self:[ `VM ] Ref.t -> value:bool -> unit
+val set_is_default_template :
+  __context:Context.t -> vm:[ `VM ] Ref.t -> value:bool -> unit
 val validate_restart_priority : string -> unit
 val set_ha_always_run :
   __context:Context.t -> self:API.ref_VM -> value:bool -> unit
@@ -66,32 +62,23 @@ val set_memory_limits :
   self:[ `VM ] Ref.t ->
   static_min:Int64.t ->
   static_max:Int64.t -> dynamic_min:Int64.t -> dynamic_max:Int64.t -> unit
-val assert_power_state_is :
-  __context:Context.t ->
-  vm:[ `VM ] Ref.t ->
-  expected:[< `Halted
-            | `Migrating
-            | `Paused
-            | `Running
-            | `ShuttingDown
-            | `Suspended
-            > `Halted `Paused `Running `Suspended ] ->
-  unit
+val set_memory : __context:Context.t -> self:[ `VM ] Ref.t -> value:int64 -> unit
 val assert_not_ha_protected : __context:Context.t -> vm:[ `VM ] Ref.t -> unit
 val pause : __context:Context.t -> vm:API.ref_VM -> unit
 val unpause : __context:Context.t -> vm:API.ref_VM -> unit
 val set_xenstore_data : __context:Context.t -> self:API.ref_VM -> value:(string * string) list -> unit
 val start :
   __context:Context.t ->
-  vm:API.ref_VM -> start_paused:bool -> force:'a -> unit
+  vm:API.ref_VM -> start_paused:bool -> force:bool -> unit
 val assert_host_is_localhost : __context:Context.t -> host:API.ref_host -> unit
 val start_on :
   __context:Context.t ->
-  vm:API.ref_VM -> host:API.ref_host -> start_paused:bool -> force:'a -> unit
+  vm:API.ref_VM -> host:API.ref_host -> start_paused:bool -> force:bool -> unit
 val hard_reboot : __context:Context.t -> vm:API.ref_VM -> unit
 val hard_shutdown : __context:Context.t -> vm:API.ref_VM -> unit
 val clean_reboot : __context:Context.t -> vm:API.ref_VM -> unit
 val clean_shutdown : __context:Context.t -> vm:API.ref_VM -> unit
+val shutdown : __context:Context.t -> vm:API.ref_VM -> unit
 val hard_reboot_internal : __context:Context.t -> vm:API.ref_VM -> unit
 val power_state_reset : __context:Context.t -> vm:API.ref_VM -> unit
 val suspend : __context:Context.t -> vm:API.ref_VM -> unit
@@ -119,11 +106,11 @@ val create :
   actions_after_shutdown:[< `destroy | `restart ] ->
   actions_after_reboot:[< `destroy | `restart ] ->
   actions_after_crash:[< `coredump_and_destroy
-                       | `coredump_and_restart
-                       | `destroy
-                       | `preserve
-                       | `rename_restart
-                       | `restart ] ->
+                      | `coredump_and_restart
+                      | `destroy
+                      | `preserve
+                      | `rename_restart
+                      | `restart ] ->
   pV_bootloader:string ->
   pV_kernel:string ->
   pV_ramdisk:string ->
@@ -143,13 +130,21 @@ val create :
   tags:string list -> blocked_operations:'a ->
   protection_policy:[ `VMPP ] Ref.t ->
   is_snapshot_from_vmpp:bool ->
+  snapshot_schedule:[ `VMSS ] Ref.t ->
+  is_vmss_snapshot:bool ->
   appliance:API.ref_VM_appliance ->
   start_delay:int64 ->
   shutdown_delay:int64 ->
   order:int64 ->
   suspend_SR:[ `SR ] Ref.t ->
-  version:int64
--> API.ref_VM
+  version:int64 ->
+  generation_id:string ->
+  hardware_platform_version:int64 ->
+  has_vendor_device:bool ->
+  reference_label:string ->
+  domain_type:API.domain_type ->
+  nVRAM:(string * string) list
+  -> API.ref_VM
 val destroy : __context:Context.t -> self:[ `VM ] Ref.t -> unit
 val clone :
   __context:Context.t -> vm:API.ref_VM -> new_name:string -> [ `VM ] Ref.t
@@ -172,6 +167,12 @@ val set_VCPUs_number_live :
   __context:Context.t -> self:API.ref_VM -> nvcpu:int64 -> unit
 val add_to_VCPUs_params_live :
   __context:'a -> self:API.ref_VM -> key:'b -> value:'c -> 'd
+val set_NVRAM :
+  __context:Context.t -> self:API.ref_VM -> value:(string*string) list -> unit
+val remove_from_NVRAM :
+  __context:Context.t -> self:API.ref_VM -> key:string -> unit
+val add_to_NVRAM :
+  __context:Context.t -> self:API.ref_VM -> key:string -> value:string -> unit
 val set_memory_dynamic_range :
   __context:Context.t ->
   self:API.ref_VM -> min:Int64.t -> max:Int64.t -> unit
@@ -217,27 +218,44 @@ val s3_suspend : __context:Context.t -> vm:API.ref_VM -> unit
 val s3_resume : __context:Context.t -> vm:API.ref_VM -> unit
 
 (** {2 BIOS strings} *)
-
+val set_bios_strings :
+  __context:Context.t -> self:[ `VM ] Ref.t -> value:(string * string) list -> unit
 val copy_bios_strings :
   __context:Context.t -> vm:[ `VM ] Ref.t -> host:[ `host ] Ref.t -> unit
 (** Copy the BIOS strings from a host to the VM, unless the VM's BIOS strings
  *  had already been set. *)
 
 val set_protection_policy : __context:Context.t -> self:API.ref_VM -> value:API.ref_VMPP -> unit
+val set_snapshot_schedule : __context:Context.t -> self:API.ref_VM -> value:API.ref_VMSS -> unit
 
 val set_start_delay : __context:Context.t -> self:API.ref_VM -> value:int64 -> unit
 val set_shutdown_delay : __context:Context.t -> self:API.ref_VM -> value:int64 -> unit
 val set_order : __context:Context.t -> self:API.ref_VM -> value:int64 -> unit
 
 val assert_can_be_recovered : __context:Context.t -> self:API.ref_VM -> session_to:API.ref_session -> unit
+val get_SRs_required_for_recovery : __context:Context.t -> self:API.ref_VM -> session_to:API.ref_session ->API.ref_SR list
 val recover : __context:Context.t -> self:API.ref_VM ->
-	session_to:API.ref_session -> force:bool -> unit
+  session_to:API.ref_session -> force:bool -> unit
 val set_suspend_VDI : __context:Context.t -> self:API.ref_VM ->
-	value:API.ref_VDI -> unit
+  value:API.ref_VDI -> unit
 val set_appliance : __context:Context.t -> self:API.ref_VM -> value:API.ref_VM_appliance -> unit
 val import_convert : __context:Context.t -> _type:string -> username:string -> password:string ->
-	sr:API.ref_SR -> remote_config:(string * string) list -> unit
+  sr:API.ref_SR -> remote_config:(string * string) list -> unit
 
 (** [query_services __context self] returns a Map of service type -> name label provided
-	by the specific VM. *)
+    	by the specific VM. *)
 val query_services : __context:Context.t -> self:API.ref_VM -> (string * string) list
+
+val request_rdp_on : __context:Context.t -> vm:API.ref_VM -> unit
+val request_rdp_off: __context:Context.t -> vm:API.ref_VM -> unit
+
+val call_plugin : __context:Context.t -> vm:API.ref_VM -> plugin:string -> fn:string -> args:(string * string) list -> string
+
+val set_has_vendor_device : __context:Context.t -> self:API.ref_VM -> value:bool -> unit
+val assert_can_set_has_vendor_device : __context:Context.t -> self:API.ref_VM -> value:bool -> unit
+
+val import : __context:Context.t -> url:string -> sr:API.ref_SR -> full_restore:bool -> force:bool -> API.ref_VM list
+val set_domain_type : __context:Context.t -> self:API.ref_VM -> value:API.domain_type -> unit
+val set_HVM_boot_policy : __context:Context.t -> self:API.ref_VM -> value:string -> unit
+val set_NVRAM_EFI_variables :
+  __context:Context.t -> self:API.ref_VM -> value:string -> unit

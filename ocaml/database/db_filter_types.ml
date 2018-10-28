@@ -12,17 +12,17 @@
  * GNU Lesser General Public License for more details.
  *)
 
-type _val = 
-    | Field of string
-    | Literal of string
-with rpc
+type _val =
+  | Field of string
+  | Literal of string
+[@@deriving rpc]
 
 (** Represent a predicate: table row -> bool *)
-type expr = 
-    | True
-    | False
-    | Not of expr
-    | Eq of _val * _val
-    | And of expr * expr    
-    | Or of expr * expr
-with rpc
+type expr =
+  | True
+  | False
+  | Not of expr
+  | Eq of _val * _val
+  | And of expr * expr
+  | Or of expr * expr
+[@@deriving rpc]

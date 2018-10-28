@@ -3,6 +3,9 @@
 
 _xe()
 {
+    # CA-100561 Tab completion bug when grep_options is set different then default --color=auto
+    local GREP_OPTIONS=--color=never
+
     local IFS=$'\n,'
     local cur prev opts xe IFS
 
@@ -61,7 +64,7 @@ _xe()
                 return 0
                 ;;
 
-            mode) # for pif-reconfigure-ip
+            mode) # for pif-reconfigure-ip & vif-configure-ip(v4,v6)
                 if [ "${OLDSTYLE_WORDS[1]}" == "pif-reconfigure-ip" ]; then
                     IFS=$'\n,'
                     set_completions "dhcp,static,none" "$value"
@@ -69,6 +72,12 @@ _xe()
                 elif [ "${COMP_WORDS[1]}" == "pif-reconfigure-ipv6" ]; then
                     IFS=$'\n,'
                     set_completions "dhcp,static,none,autoconf" "$value"
+                elif [ "${COMP_WORDS[1]}" == "vif-configure-ipv4" ]; then
+                    IFS=$'\n,'
+                    set_completions "static,none" "$value"
+                elif [ "${COMP_WORDS[1]}" == "vif-configure-ipv6" ]; then
+                    IFS=$'\n,'
+                    set_completions "static,none" "$value"
                 elif [ "${OLDSTYLE_WORDS[1]}" == "bond-set-mode" ] || [ "${OLDSTYLE_WORDS[1]}" == "bond-create" ]; then
                     IFS=$'\n,'
                     set_completions "balance-slb,active-backup,lacp" "$value"
@@ -85,11 +94,32 @@ _xe()
                 ;;
 
             uuid)
+                # Determine the class name and append '-list'
                 case "${OLDSTYLE_WORDS[1]}" in
-                    diagnostic-vm-status) cmd=vm-list;;
-                    diagnostic-vdi-status) cmd=vdi-list;;
-                    *) cmd=`echo ${OLDSTYLE_WORDS[1]} | awk -F- '/^host-cpu-/ || /^host-crashdump-/ || /^gpu-group-/ { print $1 "-" $2 }
-                        $0 !~ /^host-cpu-/ && $0 !~ /^host-crashdump-/ && $0 !~ /^gpu-group-/ { print $1 }'`-list;;
+                    diagnostic-vm-status)
+                        cmd=vm-list;;
+                    diagnostic-vdi-status)
+                        cmd=vdi-list;;
+                    host-cpu-info)
+                        cmd=host-list;;
+                    pvs-cache-storage-*)
+                        # Chop off at the third '-' and append 'list'
+                        cmd="$(echo ${OLDSTYLE_WORDS[1]} | cut -d- -f1-3)-list";;
+                    host-cpu-*|\
+                    host-crashdump-*|\
+                    gpu-group-*|\
+                    vgpu-type-*|\
+                    pvs-server-*|\
+                    pvs-proxy-*|\
+                    pvs-site-*|\
+                    sdn-controller-*|\
+                    network-sriov-*|\
+                    cluster-host-*)
+                        # Chop off at the second '-' and append 'list'
+                        cmd="$(echo ${OLDSTYLE_WORDS[1]} | cut -d- -f1-2)-list";;
+                    *)
+                        # Chop off at the first '-' and append 'list' (works for e.g. 'pif-param-get uuid=<tab>')
+                        cmd="$(echo ${OLDSTYLE_WORDS[1]} | cut -d- -f1)-list";;
                 esac
                 IFS=$'\n,'
                 set_completions_for_names "$cmd" 'uuid' "$value"
@@ -108,10 +138,17 @@ _xe()
                 return 0
                 ;;
 
+            sr)
+                IFS=$'\n,'
+                set_completions_for_names 'sr-list' 'name-label' "$value"
+                return 0
+                ;;
+
             params)
                 val=$(final_comma_separated_param "$value")
                 class=`echo ${OLDSTYLE_WORDS[1]} | cut -d- -f1`
-                params=`${xe} ${class}-list params=all 2>/dev/null| cut -d: -f1 | sed -e s/\(.*\)//g -e s/^\ *//g -e s/\ *$//g`
+                obj=`${xe} ${class}-list params=uuid --minimal 2>/dev/null | cut -d, -f1`
+                params=`${xe} ${class}-list params=all uuid=${obj} 2>/dev/null| cut -d: -f1 | sed -e s/\(.*\)//g -e s/^\ *//g -e s/\ *$//g`
                 IFS=$'\n,'
                 set_completions "$params,all" "$val"
                 return 0
@@ -157,7 +194,7 @@ _xe()
                 fi
                 ;;
 
-            on)	
+            on)
                 IFS=$'\n,'
                 set_completions_for_names 'host-list' 'name-label' "$value"
                 return 0
@@ -222,6 +259,12 @@ _xe()
                 pifs=`${xe} pif-list --minimal 2>/dev/null`
                 IFS=$'\n,'
                 set_completions "$pifs" "$val"
+                return 0
+                ;;
+
+            allocation-algorithm) # GPU_group.allocation_algorithm
+                IFS=$'\n,'
+                set_completions 'depth-first,breadth-first' "$value"
                 return 0
                 ;;
 
@@ -293,6 +336,25 @@ _xe()
                 return 0
                 ;;
 
+            type) # for vmss
+                IFS=$'\n,'
+                set_completions 'snapshot,checkpoint,snapshot_with_quiesce' "$value"
+                return 0
+                ;;
+
+            frequency) # for vmss
+                IFS=$'\n,'
+                set_completions 'hourly,daily,weekly' "$value"
+                return 0
+                ;;
+
+            schedule:days) # for vmss
+                IFS=$'\n,'
+                LAST_VALUE=`echo ${value}|gawk 'BEGIN{FS=" "}{print $NF}'`
+                set_completions 'monday,tuesday,wednesday,thursday,friday,saturday,sunday' "$LAST_VALUE"
+                return 0
+                ;;
+
             role-name)
                 IFS=$'\n,'
                 LAST_VALUE=`echo ${value}|gawk 'BEGIN{FS=" "}{print $NF}'`
@@ -308,6 +370,12 @@ _xe()
                 return 0
                 ;;
 
+            protocol) # for sdn-controller
+                IFS=$'\n,'
+                set_completions 'ssl' "$value"
+                return 0
+                ;;
+
             *)
                 snd=`echo ${param} | gawk -F- '{print $NF}'`
                 fst=`echo ${param} | gawk -F- '{printf "%s", $1; for (i=2; i<NF; i++) printf "-%s", $i}'`
@@ -318,7 +386,12 @@ _xe()
                     else
                         all="--all"
                     fi
-                    uuids=`${xe} ${fst}-list ${all} params=uuid --minimal 2>/dev/null`
+                    if [[ "${fst}" == "into-vdi" || "$fst" == "base-vdi" || "$fst" == "vdi-from" || "$fst" == "vdi-to" ]]; then
+                        class=vdi
+                    else
+                        class=${fst}
+                    fi
+                    uuids=`${xe} ${class}-list ${all} params=uuid --minimal 2>/dev/null`
                     IFS=$'\n,'
                     set_completions "$uuids" "$value"
                     return 0
@@ -339,12 +412,14 @@ _xe()
 
         vmselectors=`${xe} help ${OLDSTYLE_WORDS[1]} 2>/dev/null | grep "optional params" | grep "<vm-selectors>"`
         hostselectors=`${xe} help ${OLDSTYLE_WORDS[1]} 2>/dev/null | grep "optional params" | grep "<host-selectors>"`
+        srselectors=`${xe} help ${OLDSTYLE_WORDS[1]} 2>/dev/null | grep "optional params" | grep "<sr-selectors>"`
         isdeviceconfig=`echo "${param}" | grep "device-config:"`
         isvcpusparams=`echo "${param}" | grep "VCPUs-params:"`
         isvmppbackupschedule=`echo "${param}" | grep "backup-schedule:"`
         isvmpparchiveschedule=`echo "${param}" | grep "archive-schedule:"`
         isvmpparchivetargetconfig=`echo "${param}" | grep "archive-target-config:"`
         isvmppalarmconfig=`echo "${param}" | grep "alarm-config:"`
+        isvmssscheduled=`echo "${param}" | grep "schedule:"`
 
         if [ "${isdeviceconfig}" ]; then
             IFS=" " type=$(for i in ${OLDSTYLE_WORDS[@]:2}; do echo $i | grep "^type="; done | sed -e 's/^type=//' | tr "[A-Z]" "[a-z]")
@@ -363,6 +438,12 @@ _xe()
             else
                 extraargs=",host="
             fi
+        elif [ "${srselectors}" ]; then
+            if [ "${param}" ] ; then
+                extraargs=",sr=,"$(params "sr-list" | sed 's/params=//g')
+            else
+                extraargs=",sr="
+            fi
         elif [ "${isvmppbackupschedule}" ]; then
             pfx=`echo ${isvmppbackupschedule} | cut -d ':' -f 1`
             set_completions "${pfx}:min=,${pfx}:hour=,${pfx}:days=" "$param"
@@ -378,6 +459,10 @@ _xe()
         elif [ "${isvmppalarmconfig}" ]; then
             pfx=`echo ${isvmppalarmconfig} | cut -d ':' -f 1`
             set_completions "${pfx}:smtp_server=,${pfx}:smtp_port=,${pfx}:email_address=" "$param"
+            return 0
+        elif [ "${isvmssscheduled}" ]; then
+            pfx=`echo ${isvmssscheduled} | cut -d ':' -f 1`
+            set_completions "${pfx}:min=,${pfx}:hour=,${pfx}:days=" "$param"
             return 0
         else
             extraargs=""
@@ -421,7 +506,7 @@ params()
 
 set_completions_for_params()
 {
-    local v=$(params "$1" | sed -e 's/<vm-selectors>=//g' -e 's/<host-selectors>=//g')
+    local v=$(params "$1" | sed -e 's/<vm-selectors>=//g' -e 's/<host-selectors>=//g' -e 's/<sr-selectors>=//g')
     set_completions "$v$2" "$3"
 }
 
